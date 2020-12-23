@@ -85,6 +85,7 @@ class TerraformRunner(object):
     def plan(self, output=""):
         output = output and "-out=%s" % output or ""
         self._run_cmd(self._get_cmd_args("plan", output=output))
+        return TerraformState.from_file(self.state_path)
 
     def init(self):
         self._run_cmd(self._get_cmd_args("init", plugin_dir=""))
@@ -331,6 +332,7 @@ class TerraformFixture(object):
         replay,
         teardown,
         pytest_config,
+        plan_only,
     ):
         self.tf_bin = tf_bin
         self.tf_root_module = tf_root_module
@@ -340,6 +342,7 @@ class TerraformFixture(object):
         self.runner = None
         self.teardown_config = td.resolve(teardown)
         self.config = pytest_config
+        self.plan_only = plan_only
 
     @property
     def name(self):
@@ -391,7 +394,10 @@ class TerraformFixture(object):
         if self.teardown_config != td.OFF:
             request.addfinalizer(self.tear_down)
         try:
-            state = self.runner.apply()
+            if self.plan_only:
+                state = self.runner.plan()
+            else:
+                state = self.runner.apply()
             state_json = state.export()
             test_api = TerraformTestApi.from_string(state_json)
 
@@ -416,8 +422,7 @@ class TerraformFixture(object):
 
 
 class FixtureDecoratorFactory(object):
-    """Generate fixture decorators on the fly.
-    """
+    """Generate fixture decorators on the fly."""
 
     scope_class_map = defaultdict(lambda: TerraformFixture)
 
@@ -445,6 +450,7 @@ class FixtureDecoratorFactory(object):
         replay=None,
         name=None,
         teardown=td.DEFAULT,
+        plan_only=False,
     ):
         # We have to hook into where fixture discovery will find
         # our fixtures, the easiest option is to store on the module that
@@ -477,6 +483,7 @@ class FixtureDecoratorFactory(object):
             replay,
             teardown,
             PytestConfig.resolve(),
+            plan_only=plan_only,
         )
         self._fixtures.append(tfix)
         marker = pytest.fixture(scope=scope, name=terraform_dir)
